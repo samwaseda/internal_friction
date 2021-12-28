@@ -1,6 +1,8 @@
 from pyiron_atomistics import Project
 from sklearn import linear_model
 import numpy as np
+from itertools import chain
+from collection import defaultdict
 
 
 def set_input(job):
@@ -31,6 +33,7 @@ class InternalFriction(Project):
         self._a_0 = a_0
         self._eps_lst = eps_lst
         self._coeff_murn = None
+        self._sqs_d_dict = None
 
     @property
     def n_repeat(self):
@@ -124,3 +127,43 @@ class InternalFriction(Project):
 
     def get_lattice_constant(self, c):
         return -(self.coeff[2] + self.coeff[4] * c) * 0.5 / (self.coeff[3] + self.coeff[5] * c)
+
+    @property
+    def _sqs_displacements(self):
+        if self._sqs_d_dict is None:
+            d_dict = defaultdict(list)
+            for job in chain(*[
+                self.iter_jobs(job='spx_murn*', chemicalformula='*Mn*', status=status)
+                for status in ['finished', 'not_converged']
+            ]):
+                d_dict['formula'].append(job.structure.get_chemical_formula())
+                d_dict['displacements'].append(
+                    np.einsum(
+                        'ji,nj->ni',
+                        np.linalg.inv(job.structure.cell),
+                        job.output.total_displacements[-1]
+                    )
+                )
+            for k, v in d_dict.items():
+                d_dict[k] = np.asarray(v)
+            self._sqs_d_dict = {}
+            for c in np.unique(d_dict['formula']):
+                self._sqs_d_dict[c] = np.mean(
+                    d_dict['displacements'][c == d_dict['formula']], axis=0
+                )
+        return self._sqs_d_dict
+
+    @property
+    def structure_lst(self):
+        structure_dict = {}
+        for structure in self.sqs_lst:
+            a_0 = self.get_lattice_constant(
+                np.sum(structure.get_chemical_symbols() == 'Mn') / len(structure)
+            )
+            strain = (a_0**3 / 4 / structure.get_volume(per_atom=True))**(1 / 3) - 1
+            struct = structure.apply_strain(strain, return_box=True)
+            cf = struct.get_chemical_formula()
+            if cf in self._sqs_displacements.keys():
+                struct.positions += np.einsum('ji,nj->ni', struct.cell, self._sqs_displacements[cf])
+            structure_dict[cf] = struct.copy()
+        return structure_dict
