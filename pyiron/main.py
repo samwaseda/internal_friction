@@ -44,6 +44,7 @@ class Project(PyironProject):
         self._eps_lst = eps_lst
         self._coeff_murn = None
         self._sqs_d_dict = None
+        self._structure_dict = None
 
     @property
     def n_repeat(self):
@@ -103,6 +104,7 @@ class Project(PyironProject):
     def _db_filter_function(job):
         return (job.status in ['finished', 'not_converged']) & job.job_name.startswith('spx_murn')
 
+    @property
     def murn_dataframe(self):
         table = self.create.table()
         table.filter_function = self._db_filter_function
@@ -134,7 +136,7 @@ class Project(PyironProject):
         return self._coeff_murn
 
     def get_lattice_constant(self, c):
-        return -(self.coeff[2] + self.coeff[4] * c) * 0.5 / (self.coeff[3] + self.coeff[5] * c)
+        return -(self.coeff_murn[2] + self.coeff_murn[4] * c) * 0.5 / (self.coeff_murn[3] + self.coeff_murn[5] * c)
 
     @property
     def _sqs_displacements(self):
@@ -163,21 +165,22 @@ class Project(PyironProject):
 
     @property
     def structure_lst(self):
-        structure_dict = {}
-        for structure in self.sqs_lst:
-            a_0 = self.get_lattice_constant(
-                np.sum(structure.get_chemical_symbols() == 'Mn') / len(structure)
-            )
-            strain = (a_0**3 / 4 / structure.get_volume(per_atom=True))**(1 / 3) - 1
-            struct = structure.apply_strain(strain, return_box=True)
-            cf = struct.get_chemical_formula()
-            if cf in self._sqs_displacements.keys():
-                struct.positions += np.einsum('ji,nj->ni', struct.cell, self._sqs_displacements[cf])
-            structure_dict[cf] = struct.copy()
-        return structure_dict
+        if self._structure_dict is None:
+            self._structure_dict = {}
+            for structure in self.sqs_lst:
+                a_0 = self.get_lattice_constant(
+                    np.sum(structure.get_chemical_symbols() == 'Mn') / len(structure)
+                )
+                strain = (a_0**3 / 4 / structure.get_volume(per_atom=True))**(1 / 3) - 1
+                struct = structure.apply_strain(strain, return_box=True)
+                cf = struct.get_chemical_formula()
+                if cf in self._sqs_displacements.keys():
+                    struct.positions += np.einsum('ji,nj->ni', struct.cell, self._sqs_displacements[cf])
+                self._structure_dict[cf] = struct.copy()
+        return self._structure_dict
 
     def run_nonmag(self):
-        for k, structure in self.structure_dict.items():
+        for k, structure in self.structure_lst.items():
             cf = structure.get_chemical_formula()
             if 'Mn' not in cf:
                 continue
