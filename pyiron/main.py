@@ -1,11 +1,11 @@
-from pyiron_atomistics import Project
+from pyiron_atomistics import Project as PyironProject
 from sklearn import linear_model
 import numpy as np
 from itertools import chain
-from collection import defaultdict
+from collections import defaultdict
 
 
-def set_input(job):
+def set_input(job, cores=120, queue='cm'):
     job.set_encut(550)
     job.set_kpoints(k_mesh_spacing=0.1)
     job.set_convergence_precision(electronic_energy=1.0e-6)
@@ -15,19 +15,29 @@ def set_input(job):
         spin_mixing_parameter=0.7,
         spin_residual_scaling=0.1
     )
+    job.server.cores = cores
+    if queue is not None:
+        job.server.queue = queue
 
 
-class InternalFriction(Project):
+class Project(PyironProject):
     def __init__(
         self,
-        project,
-        job_name,
+        path='',
+        user=None,
+        sql_query=None,
+        default_working_directory=False,
         n_repeat=3,
         Mn_range=np.array([0.18, 0.24, 0.31]),
         a_0=3.5,
         eps_lst=np.linspace(-0.01, 0.04, 6)
     ):
-        super().__init__(project, job_name)
+        super().__init__(
+            path=path,
+            user=user,
+            sql_query=sql_query,
+            default_working_directory=default_working_directory,
+        )
         self._n_repeat = n_repeat
         self._Mn_range = Mn_range
         self._a_0 = a_0
@@ -45,7 +55,7 @@ class InternalFriction(Project):
 
     def run_sqs(self):
         for c in self.c_range:
-            job = self.create_job('SQSJob', 'sqs_{}_{}'.format(self.n_repeat, c).replace('.', 'c'))
+            job = self.create.job.SQSJob(('sqs', self.n_repeat, c))
             job.structure = self.create_structure('Fe', 'fcc', self._a_0).repeat(self.n_repeat)
             job.input['mole_fractions'] = {'Fe': 1 - c, 'Mn': c}
             job.run()
@@ -74,8 +84,6 @@ class InternalFriction(Project):
                 m[job.structure.analyse.get_layers()[:, 0] % 2 == 0] *= -1
                 job.structure.set_initial_magnetic_moments(m)
                 job.calc_minimize()
-                job.server.cores = 120
-                job.server.queue = 'cm'
                 job.run()
 
     @staticmethod
@@ -167,3 +175,51 @@ class InternalFriction(Project):
                 struct.positions += np.einsum('ji,nj->ni', struct.cell, self._sqs_displacements[cf])
             structure_dict[cf] = struct.copy()
         return structure_dict
+
+    def run_nonmag(self):
+        for k, structure in self.structure_dict.items():
+            cf = structure.get_chemical_formula()
+            if 'Mn' not in cf:
+                continue
+            dz = np.array([0, 0, 0.5 * (structure.get_volume(per_atom=True) * 4)**(1 / 3)])
+            for ii, pos in enumerate(structure.positions + dz):
+                job = self.create.job.Sphinx(('spx_carbon_nonmag', cf, ii))
+                if not job.status.initialized:
+                    continue
+                job.structure = structure.copy()
+                set_input(job)
+                job.structure += self.create.structur.atoms(
+                    elements=['C'], positions=[pos], cell=structure.cell
+                )
+                job.calc_minimize()
+                job.run()
+
+    def run_afm(self):
+        n_cores = 80
+        for job_nonmag in self.iter_jobs(job='spx_carbon_nonmag*'):
+            if job_nonmag.status.running or job_nonmag.status.submitted:
+                print(job_nonmag.job_name, 'not ready')
+                continue
+            structure = job_nonmag.get_structure()
+            job_name = job_nonmag.job_name.replace('nonmag', 'afm')
+            mixer = self.create_job('Intermixer', job_name.replace('spx', 'mixer'))
+            if not mixer.status.initialized:
+                continue
+            total_cores = 0
+            for ii in range(3):
+                spx = self.create.job.Sphinx((job_name, ii))
+                magmoms = 2 * np.ones(len(structure))
+                spx.structure = structure.copy()
+                magmoms[structure.analyse.get_layers(distance_threshold=0.5)[:, ii] % 2 == 0] *= -1
+                magmoms[spx.structure.select_index('C')] = 0.01
+                spx.structure.set_initial_magnetic_moments(magmoms)
+                spx.server.run_mode.interactive_non_modal = True
+                set_input(spx, cores=n_cores, queue=None)
+                mixer.ref_job = spx
+                total_cores += n_cores
+            mixer.server.cores = total_cores
+            minimizer = self.create.job.SxExtOptInteractive(job_name.replace('spx', 'sxextopt'))
+            minimizer.ref_job = mixer
+            minimizer.server.cores = total_cores
+            minimizer.server.queue = 'cm'
+            minimizer.run()
