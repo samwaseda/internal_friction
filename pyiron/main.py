@@ -226,3 +226,18 @@ class Project(PyironProject):
             minimizer.server.cores = total_cores
             minimizer.server.queue = 'cm'
             minimizer.run()
+
+    def run_elast(self):
+        for k, structure in self.structure_dict.items():
+            job = self.create.job.Sphinx(('spx_elast', k))
+            if not job.status.initialized:
+                continue
+            job.structure = structure.copy()
+            set_input(job)
+            m = 2 * np.ones(len(job.structure))
+            m[job.structure.analyse.get_layers(distance_threshold=0.1)[:, 0] % 2 == 0] *= -1
+            job.structure.set_initial_magnetic_moments(m)
+            job.calc_minimize()
+            elast = job.create_job('ElasticTensor', job.job_name.replace('spx_', ''))
+            elast.input['use_elements'] = False
+            elast.run()
