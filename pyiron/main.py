@@ -3,6 +3,7 @@ from sklearn import linear_model
 import numpy as np
 from itertools import chain
 from collections import defaultdict
+from hashlib import sha1
 
 
 def set_input(job, cores=120, queue='cm'):
