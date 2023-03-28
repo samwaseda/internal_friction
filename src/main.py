@@ -298,7 +298,7 @@ def setup_lmp_input(lmp, n_atoms=None, direction=None, fix_id=-1):
             n_atoms = len(lmp.structure) - 1
         except TypeError:
             raise AssertionError("either `n_atoms` or the structure must be set")
-    fix_id = np.arange(n_atoms)[fix_id] + 1
+    fix_id = np.arange(n_atoms)[fix_id] + 2
     lmp.input.control['atom_modify'] = 'map array'
     lmp.input.control["group___fixed"] = f"id {fix_id}"
     lmp.input.control["group___free"] = "subtract all fixed"
