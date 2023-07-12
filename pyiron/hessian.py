@@ -9,12 +9,14 @@ class Hessian:
         pr,
         structure, 
         potential,
-        symprec=0.001
+        symprec=0.001,
+        minimize_pressure=True
     ):
         self.project = pr
         self.potential = potential
         self.structure = structure.copy()
         self.symprec = symprec
+        self.minimize_pressure = minimize_pressure
 
     def get_lmp_minim(self, structure):
         lmp = self.project.create.job.Lammps(
@@ -30,7 +32,7 @@ class Hessian:
             lmp.potential = self.potential
             lmp.interactive_open()
             qn = lmp.create_job('QuasiNewton', lmp.job_name.replace('lmp', 'qn'))
-            qn.input['ionic_force_tolerance'] = 1.0e-3
+            qn.input['ionic_force_tolerance'] = 1.0e-4
             qn.run()
         return lmp
 
@@ -43,6 +45,8 @@ class Hessian:
         return -lmp.output.pressures[-1].flatten()[[0, 4, 8]]
 
     def get_relaxed_structure(self):
+        if not self.minimize_pressure:
+            return self.get_lmp_minim(self.structure).get_structure()
         minim = minimize(
             self.get_energy, [0, 0, 0], method='Newton-CG', jac=self.get_stress
         )
@@ -67,5 +71,6 @@ class Hessian:
         )
         qn.input['num_points'] = 1
         qn.input['symprec'] = self.symprec
+        qn.input['displacement'] = 0.001
         qn.run()
         return qn["output/force_constants"].squeeze()
