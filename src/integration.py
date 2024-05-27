@@ -30,3 +30,38 @@ def get_diff_E_P(mode, P_dict, structure, cutoff_radius=np.inf):
     )
     E = cond * P_dict["energy"][indices]
     return P, E
+
+
+def get_E_P(structure, P_all_dict):
+    structure = structure.copy()[structure.get_chemical_symbols() != "O"]
+
+    P_mat = np.zeros((len(structure), len(structure), 3, 3))
+    E_mat = np.zeros((len(structure), len(structure)))
+
+    d = structure.get_distances_array(vectors=True)
+    for elem1 in ["C", "v"]:
+        for elem2 in ["C", "v"]:
+            key = "_".join(sorted([elem1, elem2]))
+            if elem1 == "v":
+                elem1 = "Fe"
+            if elem2 == "v":
+                elem2 = "Fe"
+            if key not in P_all_dict:
+                continue
+            tree = cKDTree(
+                P_all_dict[key]["vecs"] * (1 - 2 * ([elem1, elem2] == ["C", "Fe"]))
+            )
+            dist, indices = tree.query(d[structure.select_index(elem1)])
+            P_mat[structure.select_index(elem1)] += np.einsum(
+                "j,ijkl,ij->ijkl",
+                structure.get_chemical_symbols() == elem2,
+                P_all_dict[key]["dipole"][indices],
+                np.isclose(dist, 0),
+            )
+            E_mat[structure.select_index(elem1)] += np.einsum(
+                "j,ij,ij->ij",
+                structure.get_chemical_symbols() == elem2,
+                P_all_dict[key]["energy"][indices],
+                np.isclose(dist, 0),
+            )
+    return P_mat, E_mat
