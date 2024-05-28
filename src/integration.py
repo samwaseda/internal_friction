@@ -65,3 +65,24 @@ def get_E_P(structure, P_all_dict):
                 np.isclose(dist, 0),
             )
     return P_mat, E_mat
+
+
+def get_fermi(mu, kBT, boltzmann=False):
+    if boltzmann:
+        return np.exp(-mu / kBT)
+    return 1 / (1 + np.exp(mu / kBT))
+
+
+def get_mu_0(mu, c_target, kBT, N=None, max_steps=30, dmu=-0.1):
+    mu_0 = mu.mean()
+    if N is None:
+        N = np.ones_like(mu_0)
+    n_sum = np.sum(N)
+    if kBT == 0:
+        return mu_0
+    for _ in range(max_steps):
+        mu_0 += dmu
+        dc = c_target - np.sum(get_fermi(mu - mu_0, kBT) * N) / n_sum
+        if dc * dmu < 0:
+            dmu *= -0.5
+    return mu_0
