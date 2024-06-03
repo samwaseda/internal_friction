@@ -110,7 +110,7 @@ class Measurement:
         P_v_diff_C, E_v_diff_C = get_diff_E_P(
             "C", P_all_dict["v_diff_C"], structure=structure
         )
-
+        self._mat = get_E_P(structure=self.matrix, P_all_dict=P_all_dict)
         self.E_diff_dict = {"v": E_v_diff_C, "C": E_C_diff_v}
         self.P_diff_dict = {"v": P_v_diff_C, "C": P_C_diff_v}
         self._dict_element = {"Fe": "Fe", "v": "Fe", "C": "C"}
@@ -162,10 +162,6 @@ class Measurement:
             self._phi[self.get_index(element)] = new_phi
         else:
             self._phi = new_phi
-
-    @cached_property
-    def _mat(self):
-        return get_E_P(structure=self.matrix)
 
     @property
     def E_mat(self):
