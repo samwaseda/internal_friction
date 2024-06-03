@@ -31,7 +31,7 @@ def get_diff_E_P(mode, P_dict, structure, cutoff_radius=np.inf):
     P = np.einsum(
         "nki,nlj,nm,nmkl->nmij", rot, rot, cond, P_dict["dipole_canonical"][indices]
     )
-    E = cond * P_dict["energy"][indices]
+    E = cond * P_dict["min_energy"][indices]
     return P, E
 
 
@@ -64,7 +64,7 @@ def get_E_P(structure, P_all_dict):
             E_mat[structure.select_index(elem1)] += np.einsum(
                 "j,ij,ij->ij",
                 structure.get_chemical_symbols() == elem2,
-                P_all_dict[key]["energy"][indices],
+                P_all_dict[key]["min_energy"][indices],
                 np.isclose(dist, 0),
             )
     return P_mat, E_mat

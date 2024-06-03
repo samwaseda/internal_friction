@@ -252,10 +252,10 @@ class Project(PyironProject):
             for k, v in P_dict.items()
         }
 
-    def get_P_all_dict(self):
+    def get_P_all_dict(self, cutoff_radius=None):
         octa = self.get_octa(self.get_structure())
         structure = self.get_structure(octa[0])
-        data_dict = self.get_data_dict()
+        data_dict = self.get_data_dict(cutoff_radius=cutoff_radius)
         P_all_dict = {"C_C": get_P_all(structure, octa - octa[0], octa, **data_dict["C_C"])}
 
         structure = self.get_structure()
