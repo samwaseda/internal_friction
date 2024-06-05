@@ -91,7 +91,7 @@ class Project(PyironProject):
         return structure
 
     @cache
-    def get_kanzaki(self, element):
+    def get_kanzaki(self, element, cutoff=None):
         if element == "C":
             job = self.load_("single_C_run_0")
             x_origin = job.structure.positions[job.structure.select_index("C")[-1]]
@@ -106,10 +106,12 @@ class Project(PyironProject):
             x_origin = get_missing(self.get_structure(), get_diff(self.get_structure())[0])
         else:
             raise ValueError
+        if cutoff is None:
+            cutoff = 0.499 * job.structure.cell[0, 0]
         neigh = job.structure.get_neighborhood(
             x_origin,
             num_neighbors=None,
-            cutoff_radius=0.499 * job.structure.cell[0, 0]
+            cutoff_radius=cutoff
         )
         forces = job["output/generic/forces"][0]
         return neigh.vecs[neigh.distances > 0.1], forces[neigh.indices[neigh.distances > 0.1]]
@@ -203,7 +205,8 @@ class Project(PyironProject):
             )
         return positions
 
-    def get_data_list(self, force_parsing=False):
+    @cached_property
+    def _data_list(self):
         job_lst = [
             job for job in self.job_table(job="*_0").job
             if job.startswith("Cv") or job.startswith("vC") or job.startswith("CC") or job.startswith("vv")
@@ -234,7 +237,7 @@ class Project(PyironProject):
         E_dict = defaultdict(list)
         E_min_dict = defaultdict(list)
         P_solute = self.get_P_solute()
-        for data in self.get_data_list():
+        for data in self._data_list():
             # if any(["diff" in ee for ee in data["elements"]]):
             #     continue
             if np.linalg.norm(data["vec"]) > cutoff_radius:
